@@ -1,0 +1,16 @@
+# Helgrind misreads the internal signalling done by glibc >= 2.25's condition
+# variable implementation inside pthread_cond_wait itself as "signal without
+# the lock held". Our code always waits with the mutex locked. This suppresses
+# only reports whose top frames are inside __pthread_cond_wait_common.
+{
+   glibc-cond-wait-internal-signal
+   Helgrind:Dubious
+   fun:*
+   fun:__pthread_cond_wait_common
+}
+{
+   glibc-cond-wait-internal-signal-misc
+   Helgrind:Misc
+   fun:*
+   fun:__pthread_cond_wait_common
+}
