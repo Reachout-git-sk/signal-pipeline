@@ -1,0 +1,23 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build valgrind libgtest-dev
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+      - run: cmake --build build
+      - run: ctest --test-dir build --output-on-failure
+      - name: Valgrind memcheck
+        run: valgrind --tool=memcheck --leak-check=full --error-exitcode=1 ./build/sp_tests --gtest_brief=1
+      - name: Valgrind helgrind
+        run: valgrind --tool=helgrind --suppressions=tools/helgrind.supp --error-exitcode=1 ./build/sp_tests --gtest_filter='BoundedQueue.*:Pipeline.*:Receiver.*' --gtest_brief=1
+      - name: Benchmarks
+        run: |
+          ./build/signal_pipeline bench fft --workers 1,2,4 --windows 20000
+          ./build/signal_pipeline bench batching --samples 1048576 --consumers 2 --batches 1,64,1024
