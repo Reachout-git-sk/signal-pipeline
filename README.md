@@ -41,10 +41,9 @@ numbers make every drop visible in the `lost packets` counter.
 
 ## Benchmarks
 
-`./build/signal_pipeline bench ...`, measured in an Ubuntu 24.04 Docker
-container on an 8-thread Windows laptop (`tools/run_benchmarks.sh`). Other
-builds were running on the machine at the same time, so absolute numbers moved
-between runs. The shape of the results held in every run.
+`tools/run_benchmarks.sh`, run on an otherwise idle machine in the Ubuntu 24.04
+dev container (`docker/Dockerfile.dev`). The host is an Intel i5-10300H laptop:
+4 cores, 8 hardware threads.
 
 ### Lock contention: batching samples before enqueueing
 
@@ -53,32 +52,33 @@ sum the samples, so the time is almost entirely queue synchronisation.
 
 | Samples per queue item | Queue operations | Time | Samples/s |
 |---|---|---|---|
-| 1 (no batching) | 8,388,608 | 238.8 s | 35 thousand |
-| 16 | 524,288 | 11.2 s | 0.75 million |
-| 64 | 131,072 | 3.9 s | 2.1 million |
-| 256 | 32,768 | 1.0 s | 8.0 million |
-| **1024 (one window)** | **8,192** | **0.30 s** | **28.0 million** |
+| 1 (no batching) | 8,388,608 | 51.7 s | 0.16 million |
+| 16 | 524,288 | 3.83 s | 2.2 million |
+| 64 | 131,072 | 1.17 s | 7.2 million |
+| 256 | 32,768 | 0.29 s | 28.5 million |
+| **1024 (one window)** | **8,192** | **0.039 s** | **216 million** |
 
 With one lock round trip per sample, every sample pays for a mutex handoff and
-a condition variable wake-up. Batching 1024 samples per window cuts queue
-operations 1024Ã— and raised throughput about **800Ã—**. That's why the receiver
-only enqueues whole windows.
+a condition variable wake-up. Batching 1024 samples into one window cuts queue
+operations 1024× and raised throughput about **1,330×**. That's why the
+receiver only enqueues whole windows.
 
 ### FFT throughput vs worker threads
 
-40,000 windows of 1024 samples (50 Hz + 120 Hz), queue capacity 64.
+40,000 windows of 1024 samples (50 Hz + 120 Hz), queue capacity 64. Three runs;
+the table shows the median.
 
-| Workers | Run 1 windows/s | Run 1 speedup | Speedup over 3 later runs |
+| Workers | Windows/s (median of 3) | Speedup | Range over 3 runs |
 |---|---|---|---|
-| 1 | 14,820 | 1.00Ã— | 1.00Ã— |
-| 2 | 32,178 | 2.17Ã— | 1.50 to 1.70Ã— |
-| 4 | 67,625 | 4.56Ã— | 3.28 to 3.69Ã— |
-| 8 | 71,796 | 4.84Ã— | 3.78 to 4.73Ã— |
+| 1 | 16,793 | 1.00× | 14,522 to 16,818 |
+| 2 | 31,462 | 1.87× | 30,519 to 31,589 |
+| 4 | 47,947 | 2.86× | 47,872 to 48,453 |
+| 8 | 82,382 | 4.91× | 78,013 to 85,157 |
 
-Scaling is close to linear up to 4 workers and flattens at 8. The machine has
-8 hardware threads, but the producer thread also needs a core. With 8 workers
-the threads compete for cores, and the single producer filling the queue
-becomes the limit.
+Throughput keeps rising up to 8 workers, but below linear. Above 4 workers the
+extra threads run on hyper-threads sharing the same 4 physical cores, and the
+single producer thread that copies and enqueues windows competes with them for
+CPU time.
 
 ## Correctness tooling
 
